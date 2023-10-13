@@ -125,6 +125,7 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         emit CreatedContent(creator, contentID);
     }
 
+
     function _likeContent(
         address _liker,
         address creator,
@@ -132,30 +133,24 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         uint256 _value
     ) private {
         Post memory post = getCreatorContent(creator, contentID);
-        // update the content stats early incase of new incoming likes,
-        // if we don't update the "likes" early, future likes migth be
-        // use to replay already paid debt
         _transfer(_liker, address(this), _value);
+
         creatorsContent[creator][contentID].likes += _value;
         creatorsContent[creator][contentID].likers.push(_liker);
-
-        // if the content is owning before the above update, the current
-        // caller will replay the debt making the next caller get the updated
-        // stats and don't have to pay the same debt this current caller is paying for
+        uint256 likes = post.likes + _value;
         
-        // we will work with the data callected before the creator content was updated
-        // the part have not idea of the content latest stats
-        // and that's exactly what we want
-
-        uint256 contentFreeEarning = post.likes - post.withdrawn;
-        uint256 contentTotalEarning = contentFreeEarning + _value;
-
-        if (post.dislikes >= contentTotalEarning) _burn(address(this), _value);
-        
-        else if (post.dislikes > contentFreeEarning) 
-            _burn(address(this), post.dislikes - contentFreeEarning);
+        if (post.dislikes > post.likes) {
+            if (post.dislikes > likes) _burn(address(this), _value);
+            else {
+                uint256 _owning = post.dislikes - post.likes;
+                uint256 _contentBalance = likes - post.withdrawn;
+                if (_contentBalance > _owning) _burn(address(this), _owning);
+                else _burn(address(this), _contentBalance);
+            }
+        }
         emit LikeContent(msg.sender, creator, contentID, _value);
     }
+    
 
     function _dislikeContent(
         address _disliker,
