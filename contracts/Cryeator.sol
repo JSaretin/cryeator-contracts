@@ -133,20 +133,27 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         uint256 _value
     ) private {
         Post memory post = getCreatorContent(creator, contentID);
+        // update the content post early incase of new incoming likes,
+        // if we don't update the "likes" early, future likes migth be
+        // use to replay already paid debt
         _transfer(_liker, address(this), _value);
-
-        if (post.dislikes >= post.likes) {
-            uint256 remainContentEarning = (post.likes + _value) -
-                post.withdrawn;
-            uint left = post.dislikes - post.likes;
-            _burn(
-                address(this),
-                remainContentEarning < left ? remainContentEarning : left
-            );
-        }
-
         creatorsContent[creator][contentID].likes += _value;
         creatorsContent[creator][contentID].likers.push(_liker);
+
+        // if the content is owning before the above update, the current
+        // caller will replay the debt making the next caller get the updated
+        // stats and don't have to pay the same debt this current caller is paying for
+        
+        // we will work with the data callected before the creator content was updated
+        // the part have not idea of the content latest stats, and that's exactly what we want
+
+        uint256 contentFreeEarning = post.likes - post.withdrawn;
+        uint256 contentTotalEarning = contentFreeEarning + _value;
+
+        if (post.dislikes >= contentTotalEarning) _burn(address(this), _value);
+        
+        else if (post.dislikes > contentFreeEarning) 
+            _burn(address(this), post.dislikes - contentFreeEarning);
         emit LikeContent(msg.sender, creator, contentID, _value);
     }
 
@@ -156,26 +163,19 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         string memory contentID,
         uint256 _value
     ) private {
-        if (!contentExist(creator, contentID)) revert ContentNotFound();
+        Post memory post = getCreatorContent(creator, contentID);
 
         _burn(_disliker, _value);
-
-        uint256 remainEarning = getContentFreeEarning(creator, contentID);
-
-        if (remainEarning >= _value) {
-            // if the likes is greater than the dislikes, we will burn the worth of the current dislike
-            // from the creator content earning
-
-            // if the amount to burn is greater than of equal to the remaining amount earned from the content
-            // burn remaining balance, else burn the dislike amount from the remaining earned
-            _burn(
-                address(this),
-                remainEarning <= _value ? remainEarning : _value
-            );
-        }
-
         creatorsContent[creator][contentID].dislikes += _value;
         creatorsContent[creator][contentID].dislikers.push(_disliker);
+        // we are updating the content stats ealy like the post instance to 
+        // make the future likes aware that this content is then we can deduct
+        // the owing amount from the current like
+        
+        uint256 contentFreeEarning = post.likes - post.withdrawn;
+        uint256 contentTotalDislike = post.dislikes + _value;
+        if (contentFreeEarning >= contentTotalDislike) _burn(address(this), _value);
+
         emit DislikeContent(_disliker, creator, contentID, _value);
     }
 
@@ -241,7 +241,9 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         string memory likeContentID
     ) public {
         address creator = msg.sender;
-        uint256 remainEarning = getContentFreeEarning(creator, contentID);
+        Post memory post = getCreatorContent(creator, contentID);
+        uint256 remainEarning = post.likes - post.withdrawn;
+        // uint256 remainEarning = getContentFreeEarning(creator, contentID);
 
         if (remainEarning <= 0) revert WithdrawAmountTooLow();
         if (!contentExist(likeContentAuthor, likeContentID))
