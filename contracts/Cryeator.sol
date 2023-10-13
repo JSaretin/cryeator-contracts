@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 import {Cryeator as CryeatorToken} from "./CryeatorToken.sol";
 
-interface ICryeator {}
 
 contract CryeatorProtection {
     mapping(address => mapping(string => mapping(uint256 => bool)))
@@ -133,7 +132,7 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         uint256 _value
     ) private {
         Post memory post = getCreatorContent(creator, contentID);
-        // update the content post early incase of new incoming likes,
+        // update the content stats early incase of new incoming likes,
         // if we don't update the "likes" early, future likes migth be
         // use to replay already paid debt
         _transfer(_liker, address(this), _value);
@@ -145,7 +144,8 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         // stats and don't have to pay the same debt this current caller is paying for
         
         // we will work with the data callected before the creator content was updated
-        // the part have not idea of the content latest stats, and that's exactly what we want
+        // the part have not idea of the content latest stats
+        // and that's exactly what we want
 
         uint256 contentFreeEarning = post.likes - post.withdrawn;
         uint256 contentTotalEarning = contentFreeEarning + _value;
@@ -171,7 +171,7 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         // we are updating the content stats ealy like the post instance to 
         // make the future likes aware that this content is then we can deduct
         // the owing amount from the current like
-        
+
         uint256 contentFreeEarning = post.likes - post.withdrawn;
         uint256 contentTotalDislike = post.dislikes + _value;
         if (contentFreeEarning >= contentTotalDislike) _burn(address(this), _value);
