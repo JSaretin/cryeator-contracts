@@ -2,7 +2,6 @@
 pragma solidity ^0.8.0;
 import {Cryeator as CryeatorToken} from "./CryeatorToken.sol";
 
-
 contract CryeatorProtection {
     mapping(address => mapping(string => mapping(uint256 => bool)))
         private _withdrawInSameBlock;
@@ -125,7 +124,6 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         emit CreatedContent(creator, contentID);
     }
 
-
     function _likeContent(
         address _liker,
         address creator,
@@ -138,8 +136,8 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         creatorsContent[creator][contentID].likes += _value;
         creatorsContent[creator][contentID].likers.push(_liker);
         uint256 likes = post.likes + _value;
-        
-        if (post.dislikes > post.likes) {
+
+        if (_value > 0 && post.dislikes > post.likes) {
             if (post.dislikes > likes) _burn(address(this), _value);
             else {
                 uint256 _owning = post.dislikes - post.likes;
@@ -150,7 +148,6 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         }
         emit LikeContent(msg.sender, creator, contentID, _value);
     }
-    
 
     function _dislikeContent(
         address _disliker,
@@ -159,17 +156,16 @@ contract CryeatorContent is CryeatorToken, CryeatorProtection {
         uint256 _value
     ) private {
         Post memory post = getCreatorContent(creator, contentID);
-
         _burn(_disliker, _value);
         creatorsContent[creator][contentID].dislikes += _value;
         creatorsContent[creator][contentID].dislikers.push(_disliker);
-        // we are updating the content stats ealy like the post instance to 
-        // make the future likes aware that this content is then we can deduct
-        // the owing amount from the current like
 
-        uint256 contentFreeEarning = post.likes - post.withdrawn;
-        uint256 contentTotalDislike = post.dislikes + _value;
-        if (contentFreeEarning >= contentTotalDislike) _burn(address(this), _value);
+        uint256 _contentBalance = post.likes - post.withdrawn;
+
+        if (_contentBalance > 0) {
+            if (_contentBalance > _value) _burn(address(this), _value);
+            else _burn(address(this), _value);
+        }
 
         emit DislikeContent(_disliker, creator, contentID, _value);
     }
