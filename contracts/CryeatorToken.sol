@@ -3,22 +3,52 @@ pragma solidity ^0.8.0;
 
 interface IERC20 {
     function balanceOf(address _owner) external view returns (uint256 balance);
-    function transfer(address _to,uint256 _value ) external returns (bool success);
-    function transferFrom(address _from,address _to,uint256 _value) external returns (bool success);
-    function approve(address _spender,uint256 _value) external returns (bool success);
-    function allowance(address _owner,address _spender) external view returns (uint256 remaining);
-    function increaseAllowance(address _spender, uint256 _value) external returns(bool);
-    function decreaseAllowance(address _spender, uint256 _value) external returns(bool);
-    function burn(uint256 _value) external returns(bool);
+
+    function transfer(
+        address _to,
+        uint256 _value
+    ) external returns (bool success);
+
+    function transferFrom(
+        address _from,
+        address _to,
+        uint256 _value
+    ) external returns (bool success);
+
+    function approve(
+        address _spender,
+        uint256 _value
+    ) external returns (bool success);
+
+    function allowance(
+        address _owner,
+        address _spender
+    ) external view returns (uint256 remaining);
+
+    function increaseAllowance(
+        address _spender,
+        uint256 _value
+    ) external returns (bool);
+
+    function decreaseAllowance(
+        address _spender,
+        uint256 _value
+    ) external returns (bool);
+
+    function burn(uint256 _value) external returns (bool);
 
     event Transfer(address indexed _from, address indexed _to, uint256 _value);
-    event Approval(address indexed _owner,address indexed _spender,uint256 _value);
+    event Approval(
+        address indexed _owner,
+        address indexed _spender,
+        uint256 _value
+    );
     event Burn(address indexed _from, uint256 amount);
 }
 
-contract Token is IERC20{
-    mapping(address=>uint256) private _balances;
-    mapping(address=>mapping(address=>uint256)) private _allowances;
+contract Token is IERC20 {
+    mapping(address => uint256) private _balances;
+    mapping(address => mapping(address => uint256)) private _allowances;
 
     error BalanceTooLow();
     error AllowanceTooLow(uint256 allowed);
@@ -28,21 +58,48 @@ contract Token is IERC20{
     string private _name;
     string private _symbol;
 
-    constructor(string memory name_, string memory symbol_, uint256 totalSupply_){
-        _name =name_;
-        _symbol =symbol_;
+    constructor(
+        string memory name_,
+        string memory symbol_,
+        uint256 totalSupply_
+    ) {
+        _name = name_;
+        _symbol = symbol_;
         _mint(msg.sender, totalSupply_ * 10 ** decimals());
     }
 
-    function name() public view returns(string memory) {return _name;}
-    function symbol() public view returns(string memory) {return _symbol;}
-    function totalSupply() public view returns(uint256) {return _totalSupply;}
-    function decimals() public pure returns(uint8) {return 18;}
+    function name() public view returns (string memory) {
+        return _name;
+    }
 
-    function balanceOf(address _owner) public view returns(uint256){return _balances[_owner];}
-    function allowance(address _owner, address _spender) public view returns(uint256){return _allowances[_owner][_spender];}
+    function symbol() public view returns (string memory) {
+        return _symbol;
+    }
 
-    function _transfer(address _from, address _to, uint256 _value) internal virtual {
+    function totalSupply() public view returns (uint256) {
+        return _totalSupply;
+    }
+
+    function decimals() public pure returns (uint8) {
+        return 18;
+    }
+
+    function balanceOf(address _owner) public view returns (uint256) {
+        return _balances[_owner];
+    }
+
+    function allowance(
+        address _owner,
+        address _spender
+    ) public view returns (uint256) {
+        return _allowances[_owner][_spender];
+    }
+
+    function _transfer(
+        address _from,
+        address _to,
+        uint256 _value
+    ) internal virtual {
         if (balanceOf(_from) < _value) revert BalanceTooLow();
         if (_to == address(0)) revert AddressNotAllowed();
         _balances[_from] -= _value;
@@ -65,45 +122,53 @@ contract Token is IERC20{
         emit Transfer(address(0), _to, _value);
     }
 
-    function burn(uint256 value) public returns(bool) {
+    function burn(uint256 value) public returns (bool) {
         _burn(msg.sender, value);
         return true;
     }
 
-    function transfer(address _to, uint256 _value) public returns(bool){
+    function transfer(address _to, uint256 _value) public returns (bool) {
         _transfer(msg.sender, _to, _value);
         return true;
     }
 
-    function transferFrom(address _from, address _to, uint256 _value) public returns(bool){
+    function transferFrom(
+        address _from,
+        address _to,
+        uint256 _value
+    ) public returns (bool) {
         uint256 _allowed = allowance(_from, msg.sender);
-        if(_allowed < _value) revert AllowanceTooLow({allowed: _allowed});
+        if (_allowed < _value) revert AllowanceTooLow({allowed: _allowed});
         _transfer(_from, _to, _value);
         _allowances[_from][msg.sender] = _allowed - _value;
         return true;
     }
 
-    function approve(address _spender, uint256 _value) public returns(bool) {
+    function approve(address _spender, uint256 _value) public returns (bool) {
         address _owner = msg.sender;
         _allowances[_owner][_spender] = _value;
         emit Approval(_owner, _spender, _value);
         return true;
     }
 
-    function increaseAllowance(address _spender, uint256 _value) public returns(bool) {
+    function increaseAllowance(
+        address _spender,
+        uint256 _value
+    ) public returns (bool) {
         address _from = msg.sender;
         _allowances[_from][_spender] = allowance(_from, _spender) + _value;
         return true;
     }
 
-    function decreaseAllowance(address _spender, uint256 _value) public returns(bool) {
+    function decreaseAllowance(
+        address _spender,
+        uint256 _value
+    ) public returns (bool) {
         address _from = msg.sender;
         _allowances[_from][_spender] = allowance(_from, _spender) - _value;
         return true;
     }
 }
-
-
 
 contract CryeatorTax {
     bool public taxStatus;
@@ -136,8 +201,10 @@ contract CryeatorTax {
         require(msg.sender == owner, "!owner");
         _;
     }
-    
-    function isTaxFree(address addr) public view returns(bool) {return _isTaxFree(addr);}
+
+    function isTaxFree(address addr) public view returns (bool) {
+        return _isTaxFree(addr);
+    }
 
     function _isTaxFree(address addr) internal view returns (bool) {
         return _excludeTax[addr];
@@ -173,16 +240,19 @@ contract CryeatorTax {
     }
 }
 
-
 contract CryeatorToken is Token, CryeatorTax {
     constructor() Token("Cryeator", "CR8", 8_000_000_000) {}
 
-
-    function _transfer(address _from, address _to, uint256 _value) internal override{
+    function _transfer(
+        address _from,
+        address _to,
+        uint256 _value
+    ) internal override {
         if (_value == 0) return super._transfer(_from, _to, _value);
 
         address _thisContract = address(this);
-        if (_from == _thisContract || _to == _thisContract) return super._transfer(_from, _to, _value);
+        if (_from == _thisContract || _to == _thisContract)
+            return super._transfer(_from, _to, _value);
 
         bool _noTax = _isTaxFree(_from) || _isTaxFree(_to);
         if (_noTax) return super._transfer(_from, _to, _value);

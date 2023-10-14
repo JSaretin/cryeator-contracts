@@ -1,5 +1,5 @@
-const CryeatorPackage = artifacts.require("CryeatorPackage");
+const CryeatorContent = artifacts.require("CryeatorContent");
 
 module.exports = function (deployer) {
-  deployer.deploy(CryeatorPackage);
+  deployer.deploy(CryeatorContent);
 };

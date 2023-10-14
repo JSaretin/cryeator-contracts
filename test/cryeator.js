@@ -1,4 +1,4 @@
-const Cryeator = artifacts.require("Cryeator");
+const Cryeator = artifacts.require("CryeatorToken");
 
 contract("Cryeator", function (accounts) {
 
@@ -73,7 +73,4 @@ contract("Cryeator", function (accounts) {
     const balance = await contract.balanceOf(accounts[3])
     assert(balance == amount, "transferFrom did not work")
   })
-
-  it("can increase balance", async()=>{})
-  it("can decrease balance", async()=>{})
 });

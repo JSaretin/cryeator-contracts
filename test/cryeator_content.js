@@ -1,4 +1,4 @@
-const CryeatorContent = artifacts.require("CryeatorPackage");
+const CryeatorContent = artifacts.require("CryeatorContent");
 
 function weiToNumber(num) {
   return Number(web3.utils.fromWei(num, "ether"));
