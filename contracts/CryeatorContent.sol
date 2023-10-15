@@ -90,15 +90,12 @@ abstract contract CryeatorStructure is CryeatorProtection, CryeatorToken {
     error SpentIsGreaterThanEarned();
     error ContentRewardIsTooLow();
 
-    // struct Reaction {
-    //     uint256 value;
-    //     address addr;
-    // }
     struct Post {
         bool created;
         uint256 likes;
         uint256 dislikes;
         uint256 withdrawn;
+        uint256 burnt;
         address[] likers;
         address[] dislikers;
     }
@@ -131,16 +128,15 @@ abstract contract CryeatorStructure is CryeatorProtection, CryeatorToken {
 
         _creatorsContent[creator][contentID].likes += _value;
         _creatorsContent[creator][contentID].likers.push(_liker);
+        uint256 _freeForWithdraw = post.likes + _value + post.withdrawn;
 
-        uint256 likes = post.likes + _value;
-        if (_value > 0 && post.dislikes > post.likes) {
-            if (post.dislikes > likes) _burn(address(this), _value);
-            else {
-                uint256 _owning = post.dislikes - post.likes;
-                uint256 _contentBalance = likes - post.withdrawn;
-                if (_contentBalance > _owning) _burn(address(this), _owning);
-                else _burn(address(this), _contentBalance);
-            }
+        if (_value > 0 && post.dislikes > post.burnt && _freeForWithdraw > 0) {
+            uint256 remainDebt = post.dislikes - post.burnt;
+            uint256 toBurn = remainDebt >= _freeForWithdraw
+                ? _freeForWithdraw
+                : remainDebt;
+            _burn(address(this), toBurn);
+            _creatorsContent[creator][contentID].burnt += toBurn;
         }
         emit LikeContent(msg.sender, creator, contentID, _value);
     }
@@ -155,11 +151,16 @@ abstract contract CryeatorStructure is CryeatorProtection, CryeatorToken {
         _burn(_disliker, _value);
         _creatorsContent[creator][contentID].dislikes += _value;
         _creatorsContent[creator][contentID].dislikers.push(_disliker);
-        uint256 _contentBalance = post.likes - post.withdrawn;
+        uint256 _freeForWithdraw = post.likes - post.withdrawn;
+        uint256 dislikes = post.dislikes + _value;
 
-        if (post.dislikes < post.likes && _contentBalance > 0) {
-            if (_contentBalance >= _value) _burn(address(this), _value);
-            else _burn(address(this), _contentBalance);
+        if (_value > 0 && _freeForWithdraw > 0 && dislikes > post.burnt) {
+            uint256 remainDebt = dislikes - post.burnt;
+            uint256 toBurn = remainDebt >= _freeForWithdraw
+                ? _freeForWithdraw
+                : remainDebt;
+            _burn(address(this), toBurn);
+            _creatorsContent[creator][contentID].burnt += toBurn;
         }
         emit DislikeContent(_disliker, creator, contentID, _value);
     }
