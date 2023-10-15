@@ -56,6 +56,40 @@ contract("CryeatorContent", function (accounts) {
     );
   });
 
+  it("dislike content after like", async () => {
+    const cryeator = await CryeatorContent.deployed();
+    let contractBalance = await cryeator.balanceOf(cryeator.address);
+
+    const amount1 = web3.utils.toWei("5000", "ether");
+    const amount2 = web3.utils.toWei("500", "ether");
+    const amount3 = web3.utils.toWei("1000", "ether");
+
+    const tempContent1 = "hello1";
+    await cryeator.createContent(tempContent1);
+    await cryeator.likeContent(accounts[0], tempContent1, amount1);
+    await cryeator.withdrawAllContentEarning(
+      accounts[6],
+      tempContent1
+    );
+    let content = await cryeator.getContent(accounts[0], tempContent1);
+    assert.equal(content.likes, content.withdrawn);
+
+    await cryeator.dislikeContent(accounts[0], tempContent1, amount2);
+
+    assert.equal(
+      weiToNumber(contractBalance),
+      weiToNumber(await cryeator.balanceOf(cryeator.address)),
+      "contract balance should stay the same"
+    );
+
+    await cryeator.likeContent(accounts[0], tempContent1, amount3);
+    assert.equal(
+      weiToNumber(contractBalance) + weiToNumber(amount2),
+      weiToNumber(await cryeator.balanceOf(cryeator.address)),
+      "contract balance not as expected"
+    );
+  });
+
   it("dislike content", async () => {
     const cryeator = await CryeatorContent.deployed();
     await cryeator.transfer(accounts[4], web3.utils.toWei("1000"));
