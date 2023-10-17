@@ -141,6 +141,16 @@ abstract contract CryeatorStructure is CryeatorProtection, CryeatorToken {
 }
 
 contract CryeatorContent is CryeatorStructure {
+
+    struct CryeatorStats{
+        uint256 deposits;
+        uint256 withdrawn;
+        uint256 burnt;
+        uint256 contents;
+    }
+
+    CryeatorStats public stats;
+
     function _replayContentOwing(address _creator, string memory _contentID, Post memory post) private {
         if (post.dislikes == post.burnt) return;
         (uint256 _freeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(post);
@@ -148,6 +158,7 @@ contract CryeatorContent is CryeatorStructure {
             uint256 toBurn = _owingDebt >= _freeLikes ? _freeLikes : _owingDebt;
             _creatorsContent[_creator][_contentID].burnt += toBurn;
             _burn(address(this), toBurn);
+            stats.burnt += toBurn;
         }
     }
 
@@ -185,6 +196,7 @@ contract CryeatorContent is CryeatorStructure {
         _addNewLike(_liker, creator, contentID, _value);
         post.likes += _value;
         _replayContentOwing(creator, contentID, post);
+        stats.deposits += _value;
         emit LikeContent(msg.sender, creator, contentID, _value);
     }
 
@@ -204,9 +216,11 @@ contract CryeatorContent is CryeatorStructure {
         if (_value > _freeLikes) revert ContentRewardNotEnough();
         _increaseContentWithdrawn(_creator, _contentID, _value);
         _transfer(address(this), _to, _value);
+        stats.withdrawn += _value;
         emit WithdrawContentReward(_creator, _to, _contentID, _value);
     }
 
+    function getStats() public view returns(CryeatorStats memory){return stats;}
     function getCreatorContentsIds(address _creator) public view override returns (string[] memory) {
         return _creatorsContentIds[_creator];
     }
@@ -239,6 +253,7 @@ contract CryeatorContent is CryeatorStructure {
         address _creator = _msgSender();
         _creatorsContentIds[_creator].push(_contentID);
         _creatorsContent[_creator][_contentID].created = true;
+        stats.contents++;
         return true;
     }
 
@@ -301,6 +316,15 @@ contract CryeatorContent is CryeatorStructure {
         uint256 _value = _freeLikes - post.burnt;
         return dislikeContentWithContentEarning(_dislikeContentCreator, _dislikeContentID, _contentID, _value);
     }
+
+    // mapping(address=>mapping(address=>mapping(string=>uint256))) private _spendContentEarning;
+
+    // function spendFromContent(address _creator, address _withdrawTo, string memory _contentID, uint256 _value) internal{
+    //     Post memory post = getContent(_creator, _contentID);
+    //     address _spender = _msgSender();
+    //     // check approve to spender
+    //     _withdrawContentEarning(_creator, _withdrawTo, _contentID, _value);
+    // }
 
     function withdrawContentEarning(address _withdrawTo, string memory _contentID, uint256 _value) public override returns (bool) {
         _withdrawContentEarning(_msgSender(), _withdrawTo, _contentID, _value);
