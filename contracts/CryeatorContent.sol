@@ -141,6 +141,12 @@ abstract contract CryeatorStructure is CryeatorProtection, CryeatorToken {
 }
 
 contract CryeatorContent is CryeatorStructure {
+    mapping(address=>mapping(address=>mapping(string=>uint256))) private _contentAllowance;
+
+    event ApproveContent(address indexed _owner, address indexed _spender, string indexed _contentID, uint256 _value);
+
+    error ValueGreaterThanAllowance(uint256 allowance, uint256 spending);
+    error LowBalance(uint256 balance, uint256 spending);
 
     struct CryeatorStats{
         uint256 deposits;
@@ -161,20 +167,6 @@ contract CryeatorContent is CryeatorStructure {
             stats.burnt += toBurn;
         }
     }
-
-    // function _replayContentOwing(address _creator, string memory _contentID, Post memory post) private {
-    //     if (post.dislikes == post.burnt) return;
-        
-    //     (uint256 _supposeFreeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(post);
-    //     if (_supposeFreeLikes <= post.burnt) return;
-    //     uint256 _freeLikes = _supposeFreeLikes - post.burnt;
-
-    //     if (_owingDebt > 0 && _freeLikes > 0) { 
-    //         uint256 toBurn = _owingDebt >= _freeLikes ? _freeLikes : _owingDebt;
-    //         _creatorsContent[_creator][_contentID].burnt += toBurn;
-    //         _burn(address(this), toBurn);
-    //     }
-    // }
 
     function _increaseContentWithdrawn(address _creator, string memory _contentID, uint256 _value) private {
         _creatorsContent[_creator][_contentID].withdrawn += _value;
@@ -209,6 +201,44 @@ contract CryeatorContent is CryeatorStructure {
         emit DislikeContent(_disliker, creator, contentID, _value);
     }
 
+    function _likeContentWithContentEarning(address _creator, address _likeContentCreator, string memory _likeContentID, string memory _contentID, uint256 _value) private {
+        Post memory post = getContent(_creator, _contentID);
+        Post memory likePost = getContent(_likeContentCreator, _likeContentID);
+
+        (uint256 _freeLikes,) = this.calculateContentEarningStats(post);
+        if (_value > _freeLikes) revert ContentRewardIsTooLow();
+
+        _increaseContentWithdrawn(_creator, _contentID, _value);
+        _addNewLike(_creator, _likeContentCreator, _likeContentID, _value);
+
+        likePost.likes += _value;
+        _replayContentOwing(_likeContentCreator, _likeContentID, likePost);
+        emit LikeContent(_creator, _likeContentCreator, _likeContentID, _value);
+    }
+
+    function _likeContentFrom(address _spender, address _liker, address _creator, string memory _contentID, uint256 _value) private {
+        uint256 allowed = allowance(_liker, _spender);
+        if (_value > allowed) revert ValueGreaterThanAllowance({allowance: allowed, spending: _value});
+        uint256 balance = balanceOf(_liker);
+        if(_value > balance) revert LowBalance({balance: balance, spending: _value});
+        _updateAllowance(_liker, _spender, allowance(_liker, _spender) - _value);
+        _likeContent(_liker, _creator, _contentID, _value);
+    }
+
+    function _dislikeContentWithContentEarning(address _creator, address _dislikeContentCreator, string memory _dislikeContentID, string memory _contentID, uint256 _value) private{
+        Post memory dislikePost = getContent(_dislikeContentCreator, _dislikeContentID);
+        Post memory post = getContent(_creator, _contentID);
+
+        (uint256 _freeLikes, ) = this.calculateContentEarningStats(post);
+        if (_value > _freeLikes) revert ContentRewardNotEnough();
+
+        _increaseContentWithdrawn(_creator, _contentID, _value);
+        _addNewDislike(_creator,_dislikeContentCreator,_dislikeContentID,_value);
+        dislikePost.dislikes += _value;
+        _replayContentOwing(_dislikeContentCreator, _dislikeContentID, dislikePost);
+        emit DislikeContent(_creator,_dislikeContentCreator,_dislikeContentID,_value);
+    }
+
     function _withdrawContentEarning(address _creator, address _to, string memory _contentID, uint256 _value) internal _noReentranceWithdraw(_contentID) {
         Post memory post = getContent(_creator, _contentID);
         (uint256 _freeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(post);
@@ -220,25 +250,34 @@ contract CryeatorContent is CryeatorStructure {
         emit WithdrawContentReward(_creator, _to, _contentID, _value);
     }
 
-    function getStats() public view returns(CryeatorStats memory){return stats;}
+    // return cryeator's stats
+    function getStats() public view returns(CryeatorStats memory){
+        return stats;
+    }
+
+    // get creator's content IDs (return all the address of the content that has be created by a user)
     function getCreatorContentsIds(address _creator) public view override returns (string[] memory) {
         return _creatorsContentIds[_creator];
     }
 
+    // get a total of all creator's content
     function getCreatorContentCounts(address _creator) public view override returns (uint256) {
         return getCreatorContentsIds(_creator).length;
     }
 
+    // get creator's content, throw a error if the content is not found
     function getContent(address _creator, string memory _contentID) public view override _contentExist(_creator, _contentID) returns (Post memory){
         return _creatorsContent[_creator][_contentID];
     }
 
+    // get creator content by the ID index
     function getContentByIndex(address _creator, uint256 _contentIndex) public view override returns (Post memory) {
         string[] memory _contentIDs = getCreatorContentsIds(_creator);
         require(_contentIndex <= _contentIDs.length, "invalid index provided");
         return getContent(_creator, _contentIDs[_contentIndex]);
     }
 
+    // get a range of creator's content
     function getContentsByRange(address _creator, uint256 _contentFromIndex, uint256 _contentToIndex) public view override returns (Post[] memory posts) {
         string[] memory _contentIDs = getCreatorContentsIds(_creator);
         require( _contentFromIndex < _contentToIndex || (_contentIDs.length >= _contentFromIndex && _contentIDs.length <= _contentToIndex), "invalid range provided");
@@ -249,6 +288,7 @@ contract CryeatorContent is CryeatorStructure {
         }
     }
 
+    // allow creator to create new content (duplicate content not allowed)
     function createContent(string memory _contentID) public override noDuplicateContent(_contentID) returns (bool) {
         address _creator = _msgSender();
         _creatorsContentIds[_creator].push(_contentID);
@@ -257,84 +297,105 @@ contract CryeatorContent is CryeatorStructure {
         return true;
     }
 
-    function likeContent(address _creator,string memory _contentID,uint256 _value) public override returns (bool) {
+    // like creators content with token
+    function likeContent(address _creator, string memory _contentID, uint256 _value) public override returns (bool) {
         _likeContent(_msgSender(), _creator, _contentID, _value);
         return true;
     }
 
+    // dislike content with token
     function dislikeContent(address _creator,string memory _contentID,uint256 _value) public override returns (bool) {
         _dislikeContent(_msgSender(), _creator, _contentID, _value);
         return true;
     }
 
+    // allow a creator to like another creator's content with part of their content earning that is avalible
     function likeContentWithContentEarning(address _likeContentCreator, string memory _likeContentID, string memory _contentID, uint256 _value) public override returns (bool) {
-        address _creator = _msgSender();
-        Post memory post = getContent(_creator, _contentID);
-        Post memory likePost = getContent(_likeContentCreator, _likeContentID);
-
-        (uint256 _freeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(post);
-        if (_owingDebt > _freeLikes) revert ContentRewardNotEnough();
-        if (_value > _freeLikes) revert ContentRewardIsTooLow();
-
-        _increaseContentWithdrawn(_creator, _contentID, _value);
-        _addNewLike(_creator, _likeContentCreator, _likeContentID, _value);
-
-        likePost.likes += _value;
-        _replayContentOwing(_likeContentCreator, _likeContentID, likePost);
-        emit LikeContent(_creator, _likeContentCreator, _likeContentID, _value);
+        _likeContentWithContentEarning(_msgSender(), _likeContentCreator, _likeContentID, _contentID, _value);
         return true;
     }
 
+    // allow a creator to like another creator's content with all their content earning that is avalible
     function likeContentWithAllContentEarning(address _likeContentCreator,string memory _likeContentID,string memory _contentID) public override returns (bool) {
-        (uint256 _freeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(getContent(_msgSender(), _contentID));
-        if (_freeLikes < _owingDebt) revert ContentRewardIsTooLow();
+        (uint256 _freeLikes, ) = this.calculateContentEarningStats(getContent(_msgSender(), _contentID));
         return likeContentWithContentEarning(_likeContentCreator, _likeContentID, _contentID, _freeLikes);
     }
 
-    function dislikeContentWithContentEarning(address _dislikeContentCreator, string memory _dislikeContentID, string memory _contentID, uint256 _value) public override _contentExist(_dislikeContentCreator, _dislikeContentID) returns (bool){
-        address _creator = _msgSender();
-        Post memory post = getContent(_creator, _contentID);
-        Post memory dislikePost = getContent(_dislikeContentCreator, _dislikeContentID);
-
-        (uint256 _freeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(post);
-
-         if (_owingDebt > _freeLikes) revert ContentRewardIsTooLow();
-         if (_value > _freeLikes) revert ContentRewardNotEnough();
-
-        _increaseContentWithdrawn(_creator, _contentID, _value);
-        _addNewDislike(_creator,_dislikeContentCreator,_dislikeContentID,_value);
-        dislikePost.dislikes += _value;
-        _replayContentOwing(_dislikeContentCreator, _dislikeContentID, dislikePost);
-        emit DislikeContent(_creator,_dislikeContentCreator,_dislikeContentID,_value);
+    // allow a creator to dislike another creator's content with part of their content earning that is avalible
+    function dislikeContentWithContentEarning(address _dislikeContentCreator, string memory _dislikeContentID, string memory _contentID, uint256 _value) public override returns (bool){
+        _dislikeContentWithContentEarning(_msgSender(), _dislikeContentCreator, _dislikeContentID, _contentID, _value);
         return true;
     }
 
+    // allow a creator to dislike another creator's content with all their content earning that is avalible
     function dislikeContentWithAllContentEarning(address _dislikeContentCreator, string memory _dislikeContentID, string memory _contentID) public override returns (bool) {
         Post memory post = getContent(_msgSender(), _contentID);
-        (uint256 _freeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(post);
-        if (_owingDebt > _freeLikes) revert ContentRewardIsTooLow();
-        uint256 _value = _freeLikes - post.burnt;
-        return dislikeContentWithContentEarning(_dislikeContentCreator, _dislikeContentID, _contentID, _value);
+        (uint256 _freeLikes,) = this.calculateContentEarningStats(post);
+        return dislikeContentWithContentEarning(_dislikeContentCreator, _dislikeContentID, _contentID, _freeLikes);
     }
 
-    // mapping(address=>mapping(address=>mapping(string=>uint256))) private _spendContentEarning;
-
-    // function spendFromContent(address _creator, address _withdrawTo, string memory _contentID, uint256 _value) internal{
-    //     Post memory post = getContent(_creator, _contentID);
-    //     address _spender = _msgSender();
-    //     // check approve to spender
-    //     _withdrawContentEarning(_creator, _withdrawTo, _contentID, _value);
-    // }
-
+    // allow a creator to withdraw part of the content that is avalible to another address
     function withdrawContentEarning(address _withdrawTo, string memory _contentID, uint256 _value) public override returns (bool) {
         _withdrawContentEarning(_msgSender(), _withdrawTo, _contentID, _value);
         return true;
     }
 
+    // allow a creator to withdraw all content earning that is avalible to another address
     function withdrawAllContentEarning(address _withdrawTo, string memory _contentID) public override returns (bool) {
         Post memory post = getContent(_msgSender(), _contentID);
         (uint256 _freeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(post);
         if (_owingDebt > _freeLikes) revert ContentRewardIsTooLow();
         return withdrawContentEarning(_withdrawTo, _contentID, _freeLikes);
+    }
+
+    // get the content allowance an address can spend on behalf of a creator
+    function getContentAllowance(address _owner, address _spender, string memory _contentID) public view _contentExist(_owner, _contentID) returns(uint256){
+        return _contentAllowance[_owner][_spender][_contentID];
+    }
+
+    // use to set content allowance
+    function _approveContent(address _owner, address _spender, string memory _contentID, uint256 _value) private {
+        _contentAllowance[_owner][_spender][_contentID] = _value;
+    }
+
+    // approve content to another address to spend content earning in behalf of the content creator
+    function approveContent(address _spender, string memory _contentID, uint256 _value) public _contentExist(_msgSender(), _contentID) returns(bool){
+        address _owner = _msgSender();
+        _approveContent(_owner, _spender, _contentID, _value);
+        emit ApproveContent(_owner, _spender, _contentID, _value);
+        return true;
+    }
+
+    // increase content allowance for an address
+    function increaseContentAllowance(address _spender, string memory _contentID, uint256 _value) public _contentExist(_msgSender(), _contentID) returns(bool){
+        uint256 contentAllowance = getContentAllowance(_msgSender(), _spender, _contentID);
+        approveContent(_spender, _contentID, contentAllowance + _value);
+        return true;
+    }
+    
+    // decrease content spending allowance for an address
+    function decreaseContentAllowance(address _spender, string memory _contentID, uint256 _value) public _contentExist(_msgSender(), _contentID) returns(bool){
+        uint256 contentAllowance = getContentAllowance(_msgSender(), _spender, _contentID);
+        approveContent(_spender, _contentID, contentAllowance - _value);
+        return true;
+    }
+
+    // allow another address to spend creator's content earning
+    function withdrawContentFrom(address _creator, address _withdrawTo, string memory _contentID, uint256 _value) public {
+        address _spender = _msgSender();
+        uint256 contentAllowance = getContentAllowance(_creator, _spender, _contentID);
+        if (_value > contentAllowance) revert ValueGreaterThanAllowance({allowance: contentAllowance,spending: _value});
+        
+        (uint256 _freeLikes, ) = this.calculateContentEarningStats(getContent(_creator, _contentID));
+        if (_value > _freeLikes) revert ContentRewardNotEnough();
+
+        _approveContent(_creator, _spender, _contentID, contentAllowance - _value);
+        _withdrawContentEarning(_creator, _withdrawTo, _contentID, _value);
+    }
+
+    // like content using ERC20 allowance
+    function likeContentFrom(address _liker, address _creator, string memory _contentID, uint256 _value) public returns(bool){
+        _likeContentFrom(_msgSender(), _liker, _creator, _contentID, _value);
+        return true;
     }
 }
