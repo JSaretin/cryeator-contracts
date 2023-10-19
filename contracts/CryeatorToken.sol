@@ -50,9 +50,9 @@ contract Token is IERC20 {
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
 
-    error BalanceTooLow();
     error AllowanceTooLow(uint256 allowed);
-    error AddressNotAllowed();
+    error AddressNotAllowed(address addr);
+    error BalanceTooLow(uint256 balance, uint256 spending);
 
     uint256 private _totalSupply;
     string private _name;
@@ -100,15 +100,20 @@ contract Token is IERC20 {
         address _to,
         uint256 _value
     ) internal virtual {
-        if (balanceOf(_from) < _value) revert BalanceTooLow();
-        if (_to == address(0)) revert AddressNotAllowed();
+        if (_to == address(0)) revert AddressNotAllowed({addr: _to});
+        if (_from == address(0)) revert AddressNotAllowed({addr: _to});
+
+        uint256 balance = balanceOf(_from);
+        if (_value > balance) revert BalanceTooLow({balance: balance, spending: _value});
+        
         _balances[_from] -= _value;
         _balances[_to] += _value;
         emit Transfer(_from, _to, _value);
     }
 
     function _burn(address _from, uint256 _value) internal virtual {
-        if (balanceOf(_from) < _value) revert BalanceTooLow();
+        uint256 balance = balanceOf(_from);
+        if (_value > balance) revert BalanceTooLow({balance: balance, spending: _value});
 
         _balances[_from] -= _value;
         _totalSupply -= _value;
@@ -117,6 +122,7 @@ contract Token is IERC20 {
     }
 
     function _mint(address _to, uint256 _value) internal virtual {
+        if (_to == address(0)) revert AddressNotAllowed({addr: _to});
         _balances[_to] += _value;
         _totalSupply += _value;
         emit Transfer(address(0), _to, _value);
@@ -139,15 +145,32 @@ contract Token is IERC20 {
     ) public returns (bool) {
         uint256 _allowed = allowance(_from, msg.sender);
         if (_allowed < _value) revert AllowanceTooLow({allowed: _allowed});
+        uint256 balance = balanceOf(_from);
+        if (_value > balance) revert BalanceTooLow({balance: balance, spending: _value});
+        _approve(_from, msg.sender, _allowed - _value);
         _transfer(_from, _to, _value);
-        _allowances[_from][msg.sender] = _allowed - _value;
         return true;
     }
 
-    function approve(address _spender, uint256 _value) public returns (bool) {
-        address _owner = msg.sender;
+    function _updateAllowance(
+        address _owner,
+        address _spender,
+        uint256 _value
+    ) internal {
         _allowances[_owner][_spender] = _value;
+    }
+
+    function _approve(
+        address _owner,
+        address _spender,
+        uint256 _value
+    ) internal {
+        _updateAllowance(_owner, _spender, _value);
         emit Approval(_owner, _spender, _value);
+    }
+
+    function approve(address _spender, uint256 _value) public returns (bool) {
+        _updateAllowance(msg.sender, _spender, _value);
         return true;
     }
 
@@ -155,8 +178,7 @@ contract Token is IERC20 {
         address _spender,
         uint256 _value
     ) public returns (bool) {
-        address _from = msg.sender;
-        _allowances[_from][_spender] = allowance(_from, _spender) + _value;
+        _updateAllowance(msg.sender, _spender, allowance(msg.sender, _spender) + _value);
         return true;
     }
 
@@ -164,8 +186,7 @@ contract Token is IERC20 {
         address _spender,
         uint256 _value
     ) public returns (bool) {
-        address _from = msg.sender;
-        _allowances[_from][_spender] = allowance(_from, _spender) - _value;
+        _updateAllowance(msg.sender, _spender, allowance(msg.sender, _spender) - _value);
         return true;
     }
 }
@@ -174,7 +195,6 @@ contract CryeatorTax {
     bool public taxStatus;
     address public taxWallet;
     uint256 public taxPercent;
-    uint256 public burnTaxPercent;
     address public owner;
 
     mapping(address => bool) private _excludeTax;
@@ -186,14 +206,13 @@ contract CryeatorTax {
     event UpdatedBurnTaxPercent(uint256 percent);
 
     error RoughPlayActionNotAllow();
-    error WtfTaxIsCrazy();
+    error TaxIsToHigh(uint256 maxTax, uint256 tax);
     error TaxSettingIsTheSame();
 
     constructor() {
         taxWallet = 0x906D5807fCd1c19FA8797a558c264c33cB29e7fD;
         owner = msg.sender;
         taxPercent = 6;
-        burnTaxPercent = 20;
         addTaxFree(owner);
     }
 
@@ -222,13 +241,8 @@ contract CryeatorTax {
         emit RemoveNoTaxWallet(addr);
     }
 
-    function updateBurnTaxPercent(uint256 percent) public onlyOwner {
-        burnTaxPercent = percent;
-        emit UpdatedBurnTaxPercent(percent);
-    }
-
     function updateTax(uint256 percent) public onlyOwner {
-        if (percent > 10) revert WtfTaxIsCrazy();
+        if (percent > 10) revert TaxIsToHigh({maxTax: 10, tax: percent});
         if (percent == taxPercent) revert TaxSettingIsTheSame();
         taxPercent = percent;
         emit UpdatedTax(percent);
@@ -248,21 +262,14 @@ contract CryeatorToken is Token, CryeatorTax {
         address _to,
         uint256 _value
     ) internal override {
-        if (_value == 0) return super._transfer(_from, _to, _value);
-
+        require(_from != address(0) && _to != address(0), "Address unsupported" );
+        
+        if (!taxStatus || _value == 0 || taxWallet == address(0)) return super._transfer(_from, _to, _value);
         address _thisContract = address(this);
-        if (_from == _thisContract || _to == _thisContract)
-            return super._transfer(_from, _to, _value);
+        if (_from == _thisContract || _to == _thisContract) return super._transfer(_from, _to, _value);
+        if (_isTaxFree(_from) || _isTaxFree(_to)) return super._transfer(_from, _to, _value);
 
-        bool _noTax = _isTaxFree(_from) || _isTaxFree(_to);
-        if (_noTax) return super._transfer(_from, _to, _value);
-
-        require(
-            _from != address(0) && _to != address(0),
-            "Address unsupported"
-        );
         require(balanceOf(_from) >= _value, "ERC20: balance too low");
-
         uint256 _taxAmount = (_value * taxPercent) / 100;
 
         super._transfer(_from, address(this), _taxAmount);
