@@ -90,18 +90,38 @@ abstract contract CryeatorStructure is CryeatorProtection, CryeatorToken {
     error SpentIsGreaterThanEarned();
     error ContentRewardIsTooLow();
 
+    struct Reaction {
+        uint256 value;
+        address addr;
+    }
+
     struct Post {
         bool created;
         uint256 likes;
         uint256 dislikes;
         uint256 withdrawn;
         uint256 burnt;
-        address[] likers;
-        address[] dislikers;
+
+        uint256 totalLikersCounts;
+        uint256 totalDislikersCounts;
     }
 
+    struct CreatorStats {
+        string[] ids;
+        uint256 totalContent;
+    }
+    
+    // creator => contentID => (like / dislike) => reactor => totalReaction
+    mapping(address=>mapping(string=>mapping(bool=>mapping(address=>uint256)))) internal _totalReactions;
+    
+    // creator => contentID => (like / dislike) => reactionID => Reaction
+    mapping(address=>mapping(string=>mapping(bool=>mapping(uint256=>Reaction)))) internal _reactions;
+    
+    // creator => contentID => Post data
     mapping(address => mapping(string => Post)) internal _creatorsContent;
-    mapping(address => string[]) internal _creatorsContentIds;
+
+    // creator => total content stats
+    mapping(address => CreatorStats) internal _creatorsContentIds;
 
     modifier noDuplicateContent(string memory _contentID) virtual {
         if (_creatorsContent[_msgSender()][_contentID].created) revert DuplicatedContent();
@@ -113,7 +133,7 @@ abstract contract CryeatorStructure is CryeatorProtection, CryeatorToken {
         _;
     }
 
-    function getCreatorContentsIds(address _creator) external view virtual returns (string[] memory contentIDs);
+    function getCreatorContentsIds(address _creator, uint256 _fromIndex, uint256 _toIndex) external view virtual returns (string[] memory contentIDs);
     function getContent(address _creator,string memory _contentID) external view virtual returns (Post memory post);
     function getContentByIndex(address _creator, uint256 _contentIndex) external view virtual returns (Post memory post);
     function getContentsByRange(address _creator, uint256 _contentFromIndex, uint256 _contentToIndex) external view virtual returns (Post[] memory posts);
@@ -140,47 +160,143 @@ abstract contract CryeatorStructure is CryeatorProtection, CryeatorToken {
     function withdrawAllContentEarning(address _withdrawTo,string memory _contentID) external virtual returns (bool);
 }
 
-contract CryeatorContent is CryeatorStructure {
-    mapping(address=>mapping(address=>mapping(string=>uint256))) private _contentAllowance;
 
-    event ApproveContent(address indexed _owner, address indexed _spender, string indexed _contentID, uint256 _value);
+abstract contract ContentGetters is CryeatorStructure {
 
+    
+    // get a total of all creator's content
+    function getCreatorContentCounts(address _creator) public view override returns (uint256) {
+        return _creatorsContentIds[_creator].totalContent;
+    }
+
+    // get creator's content IDs (return all the address of the content that has be created by a user)
+    function getCreatorContentsIds(address _creator, uint256 _fromIndex, uint256 _toIndex) public view override returns (string[] memory ids) {
+        uint256 totalCreatorContent = getCreatorContentCounts(_creator);
+        require(_fromIndex <= totalCreatorContent && _toIndex <= totalCreatorContent, "invalid index provided");
+        ids = new string[](_toIndex-_fromIndex);
+        for (uint256 index; index<ids.length; index++){
+            ids[index] = getIndexID(_creator, _fromIndex + index);
+        }
+    }
+
+    function getIndexID(address _creator, uint256 _contentIndex) public view returns(string memory _contentID) {
+        uint256 totalCreatorContent = getCreatorContentCounts(_creator);
+        require(_contentIndex <= totalCreatorContent, "invalid index provided");
+        _contentID = _creatorsContentIds[_creator].ids[_contentIndex];
+    }
+
+    // get creator's content, throw a error if the content is not found
+    function getContent(address _creator, string memory _contentID) public view override _contentExist(_creator, _contentID) returns (Post memory){
+        return _creatorsContent[_creator][_contentID];
+    }
+
+    // get creator content by the ID index
+    function getContentByIndex(address _creator, uint256 _contentIndex) public view override returns (Post memory) {
+        return getContent(_creator, getIndexID(_creator, _contentIndex));
+    }
+
+    // get a range of creator's content
+    function getContentsByRange(address _creator, uint256 _contentFromIndex, uint256 _contentToIndex) public view override returns (Post[] memory posts) {
+        string[] memory _ids = getCreatorContentsIds(_creator, _contentFromIndex, _contentToIndex);
+        posts = new Post[](_ids.length);
+        for (uint256 index; index < posts.length; index++) {
+            posts[index] = getContentByIndex(_creator, _contentFromIndex + index);
+        }
+    }
+
+
+    function getLikeRaction(address _creator, string memory _contentID, uint256 _reactionID) public view returns(Reaction memory reaction){
+        // require(_reactionID <= post.totalLikersCounts && _toIndex <= post.totalDislikersCounts, "invalid range provided");
+        reaction = _reactions[_creator][_contentID][true][_reactionID];
+    }
+
+    function getDislikeRaction(address _creator, string memory _contentID, uint256 _reactionID) public view returns(Reaction memory reaction){
+        // require(_reactionID <= post.totalLikersCounts && _toIndex <= post.totalDislikersCounts, "invalid range provided");
+        reaction = _reactions[_creator][_contentID][true][_reactionID];
+    }
+
+    // get content likes reactions 
+    function getContentLikesReactions(address _creator, string memory _contentID, uint256 _fromReactionID, uint256 _toReactionID) public view returns(Reaction[] memory reactions){
+        require(_fromReactionID != 0 && _toReactionID != 0, "invalid reaction ID");
+        uint256 totalLikersCounts = getContent(_creator, _contentID).totalLikersCounts;
+        require(_fromReactionID <= totalLikersCounts && _toReactionID <= totalLikersCounts, "invalid reaction IDs provided");
+        reactions = new Reaction[]((_toReactionID - _fromReactionID) + 1);
+
+        for ( uint256 index; index < reactions.length; index++){
+            reactions[index] = getLikeRaction(_creator, _contentID, _fromReactionID+index);
+        }
+    }
+
+    function getContentDislikesReactions(address _creator, string memory _contentID, uint256 _fromReactionID, uint256 _toReactionID) public view returns(Reaction[] memory reactions){
+        require(_fromReactionID != 0 && _toReactionID != 0, "invalid reaction ID");
+        uint256 totalDislikersCounts = getContent(_creator, _contentID).totalDislikersCounts;
+        require(_fromReactionID <= totalDislikersCounts && _toReactionID <= totalDislikersCounts, "invalid range provided");
+        reactions = new Reaction[]((_toReactionID - _fromReactionID) + 1);
+
+        for ( uint256 index; index < reactions.length; index++){
+            reactions[index] = getDislikeRaction(_creator, _contentID, _fromReactionID+index);
+        }
+    }
+
+    function _getTotalReaction(address _creator, address _reactor, string memory _contentID, bool isLike) private view returns(uint256){
+        return _totalReactions[_creator][_contentID][isLike][_reactor];
+    }
+
+    function getContentAddressTotalLikeValue(address _creator, address _reactor, string memory _contentID) public view returns(uint256){
+        return _getTotalReaction(_creator, _reactor, _contentID, true);
+    }
+
+    function getContentAddressTotalDislikeValue(address _creator, address _reactor, string memory _contentID) public view returns(uint256){
+        return _getTotalReaction(_creator, _reactor, _contentID, false);
+    }
+
+}
+
+abstract contract CoreSetters is ContentGetters {
     error ValueGreaterThanAllowance(uint256 allowance, uint256 spending);
     error LowBalance(uint256 balance, uint256 spending);
 
-    struct CryeatorStats{
-        uint256 deposits;
-        uint256 withdrawn;
-        uint256 burnt;
-        uint256 contents;
-    }
 
-    CryeatorStats public stats;
-
-    function _replayContentOwing(address _creator, string memory _contentID, Post memory post) private {
+    function _replayContentOwing(address _creator, string memory _contentID, Post memory post) internal {
         if (post.dislikes == post.burnt) return;
         (uint256 _freeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(post);
         if (_owingDebt > 0 && _freeLikes > 0) { 
             uint256 toBurn = _owingDebt >= _freeLikes ? _freeLikes : _owingDebt;
             _creatorsContent[_creator][_contentID].burnt += toBurn;
             _burn(address(this), toBurn);
-            stats.burnt += toBurn;
+            // stats.burnt += toBurn;
         }
     }
 
-    function _increaseContentWithdrawn(address _creator, string memory _contentID, uint256 _value) private {
+    function _increaseContentWithdrawn(address _creator, string memory _contentID, uint256 _value) internal {
         _creatorsContent[_creator][_contentID].withdrawn += _value;
     }
 
-    function _addNewLike(address _liker, address _creator, string memory _contentID, uint256 _value) private {
+    function _addReaction(address _reactor, address _creator, string memory _contentID, uint256 _value, bool isLike) private {
         _creatorsContent[_creator][_contentID].likes += _value;
-        _creatorsContent[_creator][_contentID].likers.push(_liker);
+        uint256 _reactionID;
+        if (isLike) {
+            _creatorsContent[_creator][_contentID].totalLikersCounts++;
+            _reactionID = getContent(_creator, _contentID).totalLikersCounts;
+        }
+        else {
+            _creatorsContent[_creator][_contentID].dislikes += _value;
+            _creatorsContent[_creator][_contentID].totalDislikersCounts++;
+        }
+        _reactions[_creator][_contentID][isLike][_reactionID].addr = _reactor;
+        _reactions[_creator][_contentID][isLike][_reactionID].value = _value;
+
+        _totalReactions[_creator][_contentID][isLike][_reactor] += _value; 
     }
 
-    function _addNewDislike(address _disliker, address _creator, string memory _contentID, uint256 _value) private {
-        _creatorsContent[_creator][_contentID].dislikes += _value;
-        _creatorsContent[_creator][_contentID].dislikers.push(_disliker);
+    function _addNewLike(address _liker, address _creator, string memory _contentID, uint256 _value) internal {
+       _addReaction(_liker, _creator, _contentID, _value, true);
     }
+
+    function _addNewDislike(address _disliker, address _creator, string memory _contentID, uint256 _value) internal {
+       _addReaction(_disliker, _creator, _contentID, _value, false);
+    }
+
 
     function _likeContent(address _liker, address creator, string memory contentID, uint256 _value) internal virtual {
         Post memory post = getContent(creator, contentID);
@@ -188,7 +304,7 @@ contract CryeatorContent is CryeatorStructure {
         _addNewLike(_liker, creator, contentID, _value);
         post.likes += _value;
         _replayContentOwing(creator, contentID, post);
-        stats.deposits += _value;
+        // stats.deposits += _value;
         emit LikeContent(msg.sender, creator, contentID, _value);
     }
 
@@ -201,7 +317,7 @@ contract CryeatorContent is CryeatorStructure {
         emit DislikeContent(_disliker, creator, contentID, _value);
     }
 
-    function _likeContentWithContentEarning(address _creator, address _likeContentCreator, string memory _likeContentID, string memory _contentID, uint256 _value) private {
+    function _likeContentWithContentEarning(address _creator, address _likeContentCreator, string memory _likeContentID, string memory _contentID, uint256 _value) internal {
         Post memory post = getContent(_creator, _contentID);
         Post memory likePost = getContent(_likeContentCreator, _likeContentID);
 
@@ -216,7 +332,7 @@ contract CryeatorContent is CryeatorStructure {
         emit LikeContent(_creator, _likeContentCreator, _likeContentID, _value);
     }
 
-    function _likeContentFrom(address _spender, address _liker, address _creator, string memory _contentID, uint256 _value) private {
+    function _likeContentFrom(address _spender, address _liker, address _creator, string memory _contentID, uint256 _value) internal {
         uint256 allowed = allowance(_liker, _spender);
         if (_value > allowed) revert ValueGreaterThanAllowance({allowance: allowed, spending: _value});
         uint256 balance = balanceOf(_liker);
@@ -225,7 +341,7 @@ contract CryeatorContent is CryeatorStructure {
         _likeContent(_liker, _creator, _contentID, _value);
     }
 
-    function _dislikeContentWithContentEarning(address _creator, address _dislikeContentCreator, string memory _dislikeContentID, string memory _contentID, uint256 _value) private{
+    function _dislikeContentWithContentEarning(address _creator, address _dislikeContentCreator, string memory _dislikeContentID, string memory _contentID, uint256 _value) internal{
         Post memory dislikePost = getContent(_dislikeContentCreator, _dislikeContentID);
         Post memory post = getContent(_creator, _contentID);
 
@@ -246,56 +362,43 @@ contract CryeatorContent is CryeatorStructure {
         if (_value > _freeLikes) revert ContentRewardNotEnough();
         _increaseContentWithdrawn(_creator, _contentID, _value);
         _transfer(address(this), _to, _value);
-        stats.withdrawn += _value;
+        // stats.withdrawn += _value;
         emit WithdrawContentReward(_creator, _to, _contentID, _value);
     }
+}
+
+
+contract CryeatorContent is CoreSetters {
+    mapping(address=>mapping(address=>mapping(string=>uint256))) private _contentAllowance;
+
+    event ApproveContent(address indexed _owner, address indexed _spender, string indexed _contentID, uint256 _value);
+
+    struct CryeatorStats{
+        uint256 deposits;
+        uint256 withdrawn;
+        uint256 burnt;
+        uint256 contents;
+    }
+
+    CryeatorStats public stats;
+
+    
 
     // return cryeator's stats
     function getStats() public view returns(CryeatorStats memory){
         return stats;
     }
 
-    // get creator's content IDs (return all the address of the content that has be created by a user)
-    function getCreatorContentsIds(address _creator) public view override returns (string[] memory) {
-        return _creatorsContentIds[_creator];
-    }
-
-    // get a total of all creator's content
-    function getCreatorContentCounts(address _creator) public view override returns (uint256) {
-        return getCreatorContentsIds(_creator).length;
-    }
-
-    // get creator's content, throw a error if the content is not found
-    function getContent(address _creator, string memory _contentID) public view override _contentExist(_creator, _contentID) returns (Post memory){
-        return _creatorsContent[_creator][_contentID];
-    }
-
-    // get creator content by the ID index
-    function getContentByIndex(address _creator, uint256 _contentIndex) public view override returns (Post memory) {
-        string[] memory _contentIDs = getCreatorContentsIds(_creator);
-        require(_contentIndex <= _contentIDs.length, "invalid index provided");
-        return getContent(_creator, _contentIDs[_contentIndex]);
-    }
-
-    // get a range of creator's content
-    function getContentsByRange(address _creator, uint256 _contentFromIndex, uint256 _contentToIndex) public view override returns (Post[] memory posts) {
-        string[] memory _contentIDs = getCreatorContentsIds(_creator);
-        require( _contentFromIndex < _contentToIndex || (_contentIDs.length >= _contentFromIndex && _contentIDs.length <= _contentToIndex), "invalid range provided");
-
-        posts = new Post[](_contentToIndex - _contentFromIndex);
-        for (uint256 index = 0; index < posts.length; index++) {
-            posts[index] = getContentByIndex(_creator, _contentFromIndex + index);
-        }
-    }
-
-    // allow creator to create new content (duplicate content not allowed)
+     // allow creator to create new content (duplicate content not allowed)
     function createContent(string memory _contentID) public override noDuplicateContent(_contentID) returns (bool) {
         address _creator = _msgSender();
-        _creatorsContentIds[_creator].push(_contentID);
         _creatorsContent[_creator][_contentID].created = true;
-        stats.contents++;
+        _creatorsContentIds[_creator].ids.push(_contentID);
+        _creatorsContentIds[_creator].totalContent++;
+        // stats.contents++;
         return true;
     }
+
 
     // like creators content with token
     function likeContent(address _creator, string memory _contentID, uint256 _value) public override returns (bool) {
