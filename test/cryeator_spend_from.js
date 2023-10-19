@@ -28,8 +28,8 @@ contract("CryeatorContent", function (accounts) {
 
     assert.equal(content1Instance.likes, 0, "no reaction yet");
     assert.equal(content2Instance.likes, 0, "no reaction yet");
-    assert.equal(content1Instance.likers.length, 0, "no reactor yet");
-    assert.equal(content2Instance.likers.length, 0, "no reactor yet");
+    assert.equal(content1Instance.totalLikersCounts, 0, "no reactor yet");
+    assert.equal(content2Instance.totalLikersCounts, 0, "no reactor yet");
   });
 
   it("should transfer token to reactor", async () => {
@@ -73,8 +73,9 @@ contract("CryeatorContent", function (accounts) {
     await cryeator.likeContentFrom(liker1, accounts[0], content1, walletBalance, {from: liker});
 
     let contentToLike = await cryeator.getContent(accounts[0], content1)
+    const reactions = await cryeator.getContentLikesReactions(accounts[0], content1, 1, contentToLike.totalLikersCounts)
     assert.equal(weiToNumber(contentToLike.likes), weiToNumber(walletBalance), "like from did not excute")
-    assert.equal(contentToLike.likers[0], liker1, "address should be added to likers list")
+    assert.equal(reactions[0].addr, liker1, "address should be added to likers list")
 
     allowance = await cryeator.allowance(liker1, liker)
     assert.equal(weiToNumber(allowance), 0, "allowance not updated after transfrom from")

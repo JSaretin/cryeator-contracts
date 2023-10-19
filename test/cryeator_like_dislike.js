@@ -36,8 +36,8 @@ contract("CryeatorContent", function (accounts) {
 
     assert.equal(content1Instance.likes, 0, "no reaction yet");
     assert.equal(content2Instance.likes, 0, "no reaction yet");
-    assert.equal(content1Instance.likers.length, 0, "no reactor yet");
-    assert.equal(content2Instance.likers.length, 0, "no reactor yet");
+    assert.equal(content1Instance.totalLikersCounts, 0, "no reactor yet");
+    assert.equal(content2Instance.totalLikersCounts, 0, "no reactor yet");
   });
 
   it("should transfer token to reactor", async () => {

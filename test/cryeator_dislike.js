@@ -26,8 +26,8 @@ contract("CryeatorContent", function (accounts) {
 
     assert.equal(content1Instance.likes, 0, "no reaction yet");
     assert.equal(content2Instance.likes, 0, "no reaction yet");
-    assert.equal(content1Instance.likers.length, 0, "no reactor yet");
-    assert.equal(content2Instance.likers.length, 0, "no reactor yet");
+    assert.equal(content1Instance.totalLikersCounts, 0, "no reactor yet");
+    assert.equal(content2Instance.totalLikersCounts, 0, "no reactor yet");
   });
 
   it("should transfer token to reactor", async () => {
@@ -83,7 +83,8 @@ contract("CryeatorContent", function (accounts) {
 
     const content1Instance = await cryeator.getContent(accounts[0], content1);
     const content2Instance = await cryeator.getContent(accounts[0], content2);
-
+    const contentReaction1 = await cryeator.getContentDislikesReactions(accounts[0], content1, 1, content1Instance.totalDislikersCounts)
+    const contentReaction2 = await cryeator.getContentDislikesReactions(accounts[0], content2, 1, content2Instance.totalDislikersCounts)
     assert.equal(
       weiToNumber(contractBalanceAfterDislikes),
       weiToNumber(contractBalanceBeforeDislikes),
@@ -101,23 +102,23 @@ contract("CryeatorContent", function (accounts) {
     );
 
     assert.equal(
-      content1Instance.dislikers.length,
+      content1Instance.totalDislikersCounts,
       1,
       "disliker address not added to list of dislikers"
     );
     assert.equal(
-      content2Instance.dislikers.length,
+      content2Instance.totalDislikersCounts,
       1,
       "disliker address not added to list of dislikers"
     );
 
     assert.equal(
-      content1Instance.dislikers[0],
+      contentReaction1[0].addr,
       accounts[1],
       "address is not disliker"
     );
     assert.equal(
-      content2Instance.dislikers[0],
+      contentReaction2[0].addr,
       accounts[2],
       "address is not disliker"
     );

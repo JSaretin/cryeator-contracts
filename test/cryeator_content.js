@@ -157,7 +157,6 @@ contract("CryeatorContent", function (accounts) {
     const amount = web3.utils.toWei(am.toString(), "ether");
     await cryeator.likeContent(accounts[0], content1, amount);
 
-    // assert(accContent1.likers.length > accContent1.dislikers.length);
 
     assert.isAbove(
       weiToNumber(await cryeator.balanceOf(cryeator.address)),
