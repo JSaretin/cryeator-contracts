@@ -2,29 +2,8 @@
 pragma solidity ^0.8.0;
 import {CryeatorToken} from "./CryeatorToken.sol";
 
-contract Context {
-    function _msgSender() internal view virtual returns (address) {
-        return msg.sender;
-    }
 
-    function _msgData() internal pure virtual returns (bytes memory) {
-        return msg.data;
-    }
-
-    function _getChainID() internal view virtual returns (uint256) {
-        return block.chainid;
-    }
-
-    function _getBlockNumber() internal view virtual returns (uint256) {
-        return block.number;
-    }
-
-    function _getBlockTimestamp() internal view virtual returns (uint256) {
-        return block.timestamp;
-    }
-}
-
-contract CryeatorProtection is Context {
+contract CryeatorProtection is CryeatorToken {
     mapping(address => mapping(string => mapping(uint256 => bool)))
         private _withdrawInSameBlock;
 
@@ -55,7 +34,7 @@ contract CryeatorProtection is Context {
     }
 }
 
-abstract contract CryeatorStructure is CryeatorProtection, CryeatorToken {
+abstract contract CryeatorStructure is CryeatorProtection {
     event CreatedContent(address indexed author, string indexed contentID);
     event WithdrawContentReward(
         address indexed author,
@@ -356,9 +335,7 @@ abstract contract CoreSetters is ContentGetters {
     }
 
     function _withdrawContentEarning(address _creator, address _to, string memory _contentID, uint256 _value) internal _noReentranceWithdraw(_contentID) {
-        Post memory post = getContent(_creator, _contentID);
-        (uint256 _freeLikes, uint256 _owingDebt) = this.calculateContentEarningStats(post);
-        if (_owingDebt > _freeLikes) revert ContentRewardIsTooLow();
+        (uint256 _freeLikes, ) = this.calculateContentEarningStats(getContent(_creator, _contentID));
         if (_value > _freeLikes) revert ContentRewardNotEnough();
         _increaseContentWithdrawn(_creator, _contentID, _value);
         _transfer(address(this), _to, _value);
