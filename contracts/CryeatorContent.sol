@@ -89,6 +89,7 @@ abstract contract CryeatorStructure is CryeatorProtection {
         string[] ids;
         uint256 totalContent;
     }
+
     
     // creator => contentID => (like / dislike) => reactor => totalReaction
     mapping(address=>mapping(string=>mapping(bool=>mapping(address=>uint256)))) internal _totalReactions;
@@ -232,6 +233,15 @@ abstract contract ContentGetters is CryeatorStructure {
 }
 
 abstract contract CoreSetters is ContentGetters {
+    struct CryeatorStats{
+        uint256 deposits;
+        uint256 withdrawn;
+        uint256 burnt;
+        uint256 contents;
+    }
+
+    CryeatorStats public stats;
+
     error ValueGreaterThanAllowance(uint256 allowance, uint256 spending);
     error LowBalance(uint256 balance, uint256 spending);
 
@@ -243,7 +253,7 @@ abstract contract CoreSetters is ContentGetters {
             uint256 toBurn = _owingDebt >= _freeLikes ? _freeLikes : _owingDebt;
             _creatorsContent[_creator][_contentID].burnt += toBurn;
             _burn(address(this), toBurn);
-            // stats.burnt += toBurn;
+            stats.burnt += toBurn;
         }
     }
 
@@ -283,7 +293,7 @@ abstract contract CoreSetters is ContentGetters {
         _addNewLike(_liker, creator, contentID, _value);
         post.likes += _value;
         _replayContentOwing(creator, contentID, post);
-        // stats.deposits += _value;
+        stats.deposits += _value;
         emit LikeContent(msg.sender, creator, contentID, _value);
     }
 
@@ -291,8 +301,8 @@ abstract contract CoreSetters is ContentGetters {
         Post memory post = getContent(creator, contentID);
         _burn(_disliker, _value);
         _addNewDislike(_disliker, creator, contentID, _value);
-        post.dislikes += _value;
         _replayContentOwing(creator, contentID, post);
+        post.dislikes += _value;
         emit DislikeContent(_disliker, creator, contentID, _value);
     }
 
@@ -339,7 +349,7 @@ abstract contract CoreSetters is ContentGetters {
         if (_value > _freeLikes) revert ContentRewardNotEnough();
         _increaseContentWithdrawn(_creator, _contentID, _value);
         _transfer(address(this), _to, _value);
-        // stats.withdrawn += _value;
+        stats.withdrawn += _value;
         emit WithdrawContentReward(_creator, _to, _contentID, _value);
     }
 }
@@ -349,17 +359,6 @@ contract CryeatorContent is CoreSetters {
     mapping(address=>mapping(address=>mapping(string=>uint256))) private _contentAllowance;
 
     event ApproveContent(address indexed _owner, address indexed _spender, string indexed _contentID, uint256 _value);
-
-    struct CryeatorStats{
-        uint256 deposits;
-        uint256 withdrawn;
-        uint256 burnt;
-        uint256 contents;
-    }
-
-    CryeatorStats public stats;
-
-    
 
     // return cryeator's stats
     function getStats() public view returns(CryeatorStats memory){
@@ -372,7 +371,7 @@ contract CryeatorContent is CoreSetters {
         _creatorsContent[_creator][_contentID].created = true;
         _creatorsContentIds[_creator].ids.push(_contentID);
         _creatorsContentIds[_creator].totalContent++;
-        // stats.contents++;
+        stats.contents++;
         return true;
     }
 
