@@ -206,18 +206,18 @@ abstract contract ContentGetters is CryeatorStructure {
 
 
     function getLikeRaction(address _creator, string memory _contentID, uint256 _reactionID) public view returns(Reaction memory reaction){
-        // require(_reactionID <= post.totalLikersCounts && _toIndex <= post.totalDislikersCounts, "invalid range provided");
+        require(_reactionID <= getContent(_creator, _contentID).totalLikersCounts, "invalid like ID");
         reaction = _reactions[_creator][_contentID][true][_reactionID];
     }
 
     function getDislikeRaction(address _creator, string memory _contentID, uint256 _reactionID) public view returns(Reaction memory reaction){
-        // require(_reactionID <= post.totalLikersCounts && _toIndex <= post.totalDislikersCounts, "invalid range provided");
-        reaction = _reactions[_creator][_contentID][true][_reactionID];
+        require(_reactionID <= getContent(_creator, _contentID).totalDislikersCounts, "invalid dislike ID");
+        reaction = _reactions[_creator][_contentID][false][_reactionID];
     }
 
     // get content likes reactions 
     function getContentLikesReactions(address _creator, string memory _contentID, uint256 _fromReactionID, uint256 _toReactionID) public view returns(Reaction[] memory reactions){
-        require(_fromReactionID != 0 && _toReactionID != 0, "invalid reaction ID");
+        // require(_fromReactionID != 0 && _toReactionID != 0, "invalid reaction ID");
         uint256 totalLikersCounts = getContent(_creator, _contentID).totalLikersCounts;
         require(_fromReactionID <= totalLikersCounts && _toReactionID <= totalLikersCounts, "invalid reaction IDs provided");
         reactions = new Reaction[]((_toReactionID - _fromReactionID) + 1);
@@ -228,7 +228,7 @@ abstract contract ContentGetters is CryeatorStructure {
     }
 
     function getContentDislikesReactions(address _creator, string memory _contentID, uint256 _fromReactionID, uint256 _toReactionID) public view returns(Reaction[] memory reactions){
-        require(_fromReactionID != 0 && _toReactionID != 0, "invalid reaction ID");
+        // require(_fromReactionID != 0 && _toReactionID != 0, "invalid reaction ID");
         uint256 totalDislikersCounts = getContent(_creator, _contentID).totalDislikersCounts;
         require(_fromReactionID <= totalDislikersCounts && _toReactionID <= totalDislikersCounts, "invalid range provided");
         reactions = new Reaction[]((_toReactionID - _fromReactionID) + 1);
@@ -273,19 +273,19 @@ abstract contract CoreSetters is ContentGetters {
     }
 
     function _addReaction(address _reactor, address _creator, string memory _contentID, uint256 _value, bool isLike) private {
-        _creatorsContent[_creator][_contentID].likes += _value;
         uint256 _reactionID;
         if (isLike) {
+            _creatorsContent[_creator][_contentID].likes += _value;
             _creatorsContent[_creator][_contentID].totalLikersCounts++;
             _reactionID = getContent(_creator, _contentID).totalLikersCounts;
         }
         else {
             _creatorsContent[_creator][_contentID].dislikes += _value;
             _creatorsContent[_creator][_contentID].totalDislikersCounts++;
+            _reactionID = getContent(_creator, _contentID).totalDislikersCounts;
         }
         _reactions[_creator][_contentID][isLike][_reactionID].addr = _reactor;
         _reactions[_creator][_contentID][isLike][_reactionID].value = _value;
-
         _totalReactions[_creator][_contentID][isLike][_reactor] += _value; 
     }
 
