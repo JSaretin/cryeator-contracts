@@ -46,7 +46,29 @@ interface IERC20 {
     event Burn(address indexed _from, uint256 amount);
 }
 
-contract Token is IERC20 {
+contract Context {
+    function _msgSender() internal view virtual returns (address) {
+        return msg.sender;
+    }
+
+    function _msgData() internal pure virtual returns (bytes memory) {
+        return msg.data;
+    }
+
+    function _getChainID() internal view virtual returns (uint256) {
+        return block.chainid;
+    }
+
+    function _getBlockNumber() internal view virtual returns (uint256) {
+        return block.number;
+    }
+
+    function _getBlockTimestamp() internal view virtual returns (uint256) {
+        return block.timestamp;
+    }
+}
+
+contract Token is IERC20, Context {
     mapping(address => uint256) private _balances;
     mapping(address => mapping(address => uint256)) private _allowances;
 
@@ -129,12 +151,12 @@ contract Token is IERC20 {
     }
 
     function burn(uint256 value) public returns (bool) {
-        _burn(msg.sender, value);
+        _burn(_msgSender(), value);
         return true;
     }
 
     function transfer(address _to, uint256 _value) public returns (bool) {
-        _transfer(msg.sender, _to, _value);
+        _transfer(_msgSender(), _to, _value);
         return true;
     }
 
@@ -143,11 +165,12 @@ contract Token is IERC20 {
         address _to,
         uint256 _value
     ) public returns (bool) {
-        uint256 _allowed = allowance(_from, msg.sender);
+        address _sender = _msgSender();
+        uint256 _allowed = allowance(_from, _sender);
         if (_allowed < _value) revert AllowanceTooLow({allowed: _allowed});
         uint256 balance = balanceOf(_from);
         if (_value > balance) revert BalanceTooLow({balance: balance, spending: _value});
-        _approve(_from, msg.sender, _allowed - _value);
+        _updateAllowance(_from, _sender, _allowed - _value);
         _transfer(_from, _to, _value);
         return true;
     }
@@ -178,7 +201,8 @@ contract Token is IERC20 {
         address _spender,
         uint256 _value
     ) public returns (bool) {
-        _updateAllowance(msg.sender, _spender, allowance(msg.sender, _spender) + _value);
+        address _sender = _msgSender();
+        _updateAllowance(_sender, _spender, allowance(_sender, _spender) + _value);
         return true;
     }
 
@@ -186,12 +210,13 @@ contract Token is IERC20 {
         address _spender,
         uint256 _value
     ) public returns (bool) {
-        _updateAllowance(msg.sender, _spender, allowance(msg.sender, _spender) - _value);
+        address _sender = _msgSender();
+        _updateAllowance(_sender, _spender, allowance(_sender, _spender) - _value);
         return true;
     }
 }
 
-contract CryeatorTax {
+contract CryeatorPanel {
     bool public taxStatus;
     address public taxWallet;
     uint256 public taxPercent;
@@ -210,15 +235,19 @@ contract CryeatorTax {
     error TaxSettingIsTheSame();
 
     constructor() {
-        taxWallet = 0x906D5807fCd1c19FA8797a558c264c33cB29e7fD;
         owner = msg.sender;
         taxPercent = 6;
-        addTaxFree(owner);
     }
 
     modifier onlyOwner() {
         require(msg.sender == owner, "!owner");
         _;
+    }
+
+    function setTaxWallet(address _taxWallet) public onlyOwner {
+        require(_taxWallet!=taxWallet, "tax wallet unchanged");
+        taxWallet = _taxWallet;
+        if (!_isTaxFree(_taxWallet)){addTaxFree(_taxWallet);}
     }
 
     function isTaxFree(address addr) public view returns (bool) {
@@ -254,7 +283,7 @@ contract CryeatorTax {
     }
 }
 
-contract CryeatorToken is Token, CryeatorTax {
+contract CryeatorToken is Token, CryeatorPanel {
     constructor() Token("Cryeator", "CR8", 8_000_000_000) {}
 
     function _transfer(
@@ -276,15 +305,17 @@ contract CryeatorToken is Token, CryeatorTax {
         super._transfer(_from, _to, _value - _taxAmount);
     }
 
+    receive() external payable{}
+
     function removeToken(address token) public onlyOwner {
         if (token != address(0)) {
-            payable(msg.sender).transfer(address(this).balance);
+            payable(_msgSender()).transfer(address(this).balance);
             return;
         }
         if (token != address(this)) revert RoughPlayActionNotAllow();
 
         IERC20 erc20 = IERC20(token);
 
-        erc20.transfer(msg.sender, erc20.balanceOf(address(this)));
+        erc20.transfer(_msgSender(), erc20.balanceOf(address(this)));
     }
 }
