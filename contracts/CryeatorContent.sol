@@ -328,6 +328,15 @@ abstract contract CoreSetters is ContentGetters {
         _likeContent(_liker, _creator, _contentID, _value);
     }
 
+    function _dislikeContentFrom(address _spender, address _disliker, address _creator, string memory _contentID, uint256 _value) internal {
+        uint256 allowed = allowance(_disliker, _spender);
+        if (_value > allowed) revert ValueGreaterThanAllowance({allowance: allowed, spending: _value});
+        uint256 balance = balanceOf(_disliker);
+        if(_value > balance) revert LowBalance({balance: balance, spending: _value});
+        _approve(_disliker, _spender, allowance(_disliker, _spender) - _value);
+        _dislikeContent(_disliker, _creator, _contentID, _value);
+    }
+
     function _dislikeContentWithContentEarning(address _creator, address _dislikeContentCreator, string memory _dislikeContentID, string memory _contentID, uint256 _value) internal{
         Post memory dislikePost = getContent(_dislikeContentCreator, _dislikeContentID);
         Post memory post = getContent(_creator, _contentID);
@@ -473,6 +482,12 @@ contract CryeatorContent is CoreSetters {
     // like content using ERC20 allowance
     function likeContentFrom(address _liker, address _creator, string memory _contentID, uint256 _value) public returns(bool){
         _likeContentFrom(_msgSender(), _liker, _creator, _contentID, _value);
+        return true;
+    }
+
+    // like content using ERC20 allowance
+    function dislikeContentFrom(address _liker, address _creator, string memory _contentID, uint256 _value) public returns(bool){
+        _dislikeContentFrom(_msgSender(), _liker, _creator, _contentID, _value);
         return true;
     }
 }
