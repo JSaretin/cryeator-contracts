@@ -170,7 +170,7 @@ contract Token is IERC20, Context {
         if (_allowed < _value) revert AllowanceTooLow({allowed: _allowed});
         uint256 balance = balanceOf(_from);
         if (_value > balance) revert BalanceTooLow({balance: balance, spending: _value});
-        _updateAllowance(_from, _sender, _allowed - _value);
+        _approve(_from, _sender, _allowed - _value);
         _transfer(_from, _to, _value);
         return true;
     }
@@ -179,7 +179,7 @@ contract Token is IERC20, Context {
         address _owner,
         address _spender,
         uint256 _value
-    ) internal {
+    ) private {
         _allowances[_owner][_spender] = _value;
     }
 
@@ -188,6 +188,9 @@ contract Token is IERC20, Context {
         address _spender,
         uint256 _value
     ) internal {
+        require(_owner != address(0), "ERC20: approve from the zero address");
+        require(_spender != address(0), "ERC20: approve to the zero address");
+
         _updateAllowance(_owner, _spender, _value);
         emit Approval(_owner, _spender, _value);
     }
@@ -202,7 +205,7 @@ contract Token is IERC20, Context {
         uint256 _value
     ) public returns (bool) {
         address _sender = _msgSender();
-        _updateAllowance(_sender, _spender, allowance(_sender, _spender) + _value);
+        _approve(_sender, _spender, allowance(_sender, _spender) + _value);
         return true;
     }
 
@@ -211,7 +214,7 @@ contract Token is IERC20, Context {
         uint256 _value
     ) public returns (bool) {
         address _sender = _msgSender();
-        _updateAllowance(_sender, _spender, allowance(_sender, _spender) - _value);
+        _approve(_sender, _spender, allowance(_sender, _spender) - _value);
         return true;
     }
 }
@@ -231,12 +234,14 @@ contract CryeatorPanel {
     event UpdatedBurnTaxPercent(uint256 percent);
 
     error RoughPlayActionNotAllow();
-    error TaxIsToHigh(uint256 maxTax, uint256 tax);
     error TaxSettingIsTheSame();
 
     constructor() {
         owner = msg.sender;
-        taxPercent = 6;
+        taxPercent = 5;
+        taxStatus=true;
+        setTaxWallet(owner);
+        setTaxWallet(0x0E9b7CCA833F0E2AE7527b0d835022832E46218b);
     }
 
     modifier onlyOwner() {
@@ -271,7 +276,6 @@ contract CryeatorPanel {
     }
 
     function updateTax(uint256 percent) public onlyOwner {
-        if (percent > 10) revert TaxIsToHigh({maxTax: 10, tax: percent});
         if (percent == taxPercent) revert TaxSettingIsTheSame();
         taxPercent = percent;
         emit UpdatedTax(percent);
@@ -300,22 +304,22 @@ contract CryeatorToken is Token, CryeatorPanel {
 
         require(balanceOf(_from) >= _value, "ERC20: balance too low");
         uint256 _taxAmount = (_value * taxPercent) / 100;
+        _value = _value - _taxAmount;
 
-        super._transfer(_from, address(this), _taxAmount);
-        super._transfer(_from, _to, _value - _taxAmount);
+        super._transfer(_from, taxWallet, _taxAmount);
+        super._transfer(_from, _to, _value);
     }
 
     receive() external payable{}
 
     function removeToken(address token) public onlyOwner {
-        if (token != address(0)) {
+        if (token == address(0)) {
             payable(_msgSender()).transfer(address(this).balance);
             return;
         }
-        if (token != address(this)) revert RoughPlayActionNotAllow();
+        if (token == address(this)) revert RoughPlayActionNotAllow();
 
         IERC20 erc20 = IERC20(token);
-
         erc20.transfer(_msgSender(), erc20.balanceOf(address(this)));
     }
 }

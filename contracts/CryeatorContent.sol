@@ -197,7 +197,6 @@ abstract contract ContentGetters is CryeatorStructure {
 
     // get content likes reactions 
     function getContentLikesReactions(address _creator, string memory _contentID, uint256 _fromReactionID, uint256 _toReactionID) public view returns(Reaction[] memory reactions){
-        // require(_fromReactionID != 0 && _toReactionID != 0, "invalid reaction ID");
         uint256 totalLikersCounts = getContent(_creator, _contentID).totalLikersCounts;
         require(_fromReactionID <= totalLikersCounts && _toReactionID <= totalLikersCounts, "invalid reaction IDs provided");
         reactions = new Reaction[]((_toReactionID - _fromReactionID) + 1);
@@ -208,7 +207,6 @@ abstract contract ContentGetters is CryeatorStructure {
     }
 
     function getContentDislikesReactions(address _creator, string memory _contentID, uint256 _fromReactionID, uint256 _toReactionID) public view returns(Reaction[] memory reactions){
-        // require(_fromReactionID != 0 && _toReactionID != 0, "invalid reaction ID");
         uint256 totalDislikersCounts = getContent(_creator, _contentID).totalDislikersCounts;
         require(_fromReactionID <= totalDislikersCounts && _toReactionID <= totalDislikersCounts, "invalid range provided");
         reactions = new Reaction[]((_toReactionID - _fromReactionID) + 1);
@@ -326,7 +324,7 @@ abstract contract CoreSetters is ContentGetters {
         if (_value > allowed) revert ValueGreaterThanAllowance({allowance: allowed, spending: _value});
         uint256 balance = balanceOf(_liker);
         if(_value > balance) revert LowBalance({balance: balance, spending: _value});
-        _updateAllowance(_liker, _spender, allowance(_liker, _spender) - _value);
+        _approve(_liker, _spender, allowance(_liker, _spender) - _value);
         _likeContent(_liker, _creator, _contentID, _value);
     }
 
